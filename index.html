@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Questionnaire Summary Tool</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        input[type="radio"], input[type="checkbox"] {
+            margin-right: 5px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #summary, #graphs {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .stat {
+            margin: 10px 0;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+        canvas {
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        #exportBtn {
+            background: #28a745;
+        }
+        #exportBtn:hover {
+            background: #218838;
+        }
+        #clearBtn {
+            background: #dc3545;
+        }
+        #clearBtn:hover {
+            background: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Questionnaire Summary Tool</h1>
+    
+    <section>
+        <h2>Input Member Response</h2>
+        <form id="questionnaireForm">
+            <label>1. Have you seen our current event/promotion in our store (Korean festival)?</label>
+            <input type="radio" name="q1" value="yes" id="q1yes"> Yes
+            <input type="radio" name="q1" value="no" id="q1no"> No<br><br>
+
+            <label id="q2Label" style="display:none;">2. On which channels did you see it? (Select all that apply)</label>
+            <div id="q2Channels" style="display:none;">
+                <input type="checkbox" name="channels" value="sms"> Text/SMS<br>
+                <input type="checkbox" name="channels" value="viber"> Viber<br>
+                <input type="checkbox" name="channels" value="email"> Email<br>
+                <input type="checkbox" name="channels" value="facebook"> Facebook or Social Media<br>
+                <input type="checkbox" name="channels" value="banner"> Banner/Streamer<br>
+            </div><br>
+
+            <label>3. What do you expect or want to see in Landers during our event?</label>
+            <textarea name="q3" rows="3" placeholder="Enter response..."></textarea><br><br>
+
+            <label>4. What items or products are you most excited to buy during our event?</label>
+            <textarea name="q4" rows="3" placeholder="Enter response..."></textarea><br><br>
+
+            <label>5. Are you satisfied or happy with your purchase today?</label>
+            <input type="radio" name="q5" value="yes" id="q5yes"> Yes
+            <input type="radio" name="q5" value="no" id="q5no"> No<br>
+            <label>Explanation (Why yes? / What to improve if no?)</label>
+            <textarea name="q5Explanation" rows="3" placeholder="Enter explanation..."></textarea><br><br>
+
+            <button type="submit">Submit Response</button>
+            <button type="button" id="clearForm">Clear Form</button>
+        </form>
+    </section>
+
+    <section id="summary">
+        <h2>Summary</h2>
+        <div id="summaryContent">
+            <p>No responses yet. Submit some to see summary.</p>
+        </div>
+        <button id="loadSummary">Load Summary</button>
+        <button id="clearAll">Clear All Data</button>
+    </section>
+
+    <section id="graphs">
+        <h2>Graphs</h2>
+        <canvas id="q1Chart"></canvas>
+        <canvas id="channelsChart"></canvas>
+        <canvas id="q5Chart"></canvas>
+    </section>
+
+    <button id="exportBtn">Export to CSV (Excel Compatible)</button>
+
+    <script>
+        // LocalStorage key
+        const STORAGE_KEY = 'questionnaireResponses';
+
+        // Load responses from localStorage
+        function loadResponses() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+
+        // Save responses to localStorage
+        function saveResponses(responses) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(responses));
+        }
+
+        // Compute summary
+        function computeSummary(responses) {
+            const summary = {
+                total: responses.length,
+                q1: { yes: 0, no: 0 },
+                channels: { sms: 0, viber: 0, email: 0, facebook: 0, banner: 0 },
+                totalChannelSelections: 0, // New: Total selections across all channels
+                q3Expectations: new Map(), // For frequency count
+                q4Excited: new Map(),
+                q5: { yes: 0, no: 0 },
+                q5Explanations: []
+            };
+
+            responses.forEach(r => {
+                // Q1
+                if (r.q1 === 'yes') summary.q1.yes++;
+                else if (r.q1 === 'no') summary.q1.no++;
+
+                // Channels (only if q1 yes)
+                if (r.q1 === 'yes' && r.channels && r.channels.length > 0) {
+                    r.channels.forEach(ch => {
+                        summary.channels[ch] = (summary.channels[ch] || 0) + 1;
+                        summary.totalChannelSelections++;
+                    });
+                }
+
+                // Q3: Count frequencies (exact match)
+                if (r.q3) {
+                    const count = summary.q3Expectations.get(r.q3) || 0;
+                    summary.q3Expectations.set(r.q3, count + 1);
+                }
+
+                // Q4: Count frequencies
+                if (r.q4) {
+                    const count = summary.q4Excited.get(r.q4) || 0;
+                    summary.q4Excited.set(r.q4, count + 1);
+                }
+
+                // Q5
+                if (r.q5 === 'yes') summary.q5.yes++;
+                else if (r.q5 === 'no') summary.q5.no++;
+
+                // Q5 Explanation
+                if (r.q5Explanation) {
+                    summary.q5Explanations.push({
+                        satisfied: r.q5,
+                        explanation: r.q5Explanation
+                    });
+                }
+            });
+
+            // Find most common for Q3 and Q4
+            summary.mostExpectation = Array.from(summary.q3Expectations.entries())
+                .sort((a, b) => b[1] - a[1])[0] || ['None', 0];
+            summary.mostExcited = Array.from(summary.q4Excited.entries())
+                .sort((a, b) => b[1] - a[1])[0] || ['None', 0];
+
+            // REVISED: Most chosen channel logic
+            // Get max count
+            const maxChannelCount = Math.max(...Object.values(summary.channels));
+            if (maxChannelCount === 0) {
+                // No channels selected at all
+                summary.mostChannel = ['None', 0];
+            } else {
+                // Find the channel(s) with the max count, pick the first if tie
+                const topChannels = Object.entries(summary.channels)
+                    .filter(([_, count]) => count === maxChannelCount)
+                    .sort((a, b) => a[0].localeCompare(b[0])); // Sort alphabetically for consistency in ties
+                summary.mostChannel = topChannels[0];
+            }
+
+            return summary;
+        }
+
+        // Display summary
+        function displaySummary() {
+            const responses = loadResponses();
+            if (responses.length === 0) {
+                document.getElementById('summaryContent').innerHTML = '<p>No responses yet. Submit some to see summary.</p>';
+                return;
+            }
+
+            const summary = computeSummary(responses);
+            let html = `
+                <div class="stat"><strong>Total Responses:</strong> ${summary.total}</div>
+                <div class="stat"><strong>Q1 - Seen Promotion:</strong> Yes: ${summary.q1.yes}, No: ${summary.q1.no}</div>
+                <div class="stat"><strong>Total Channel Selections:</strong> ${summary.totalChannelSelections}</div>
+                <div class="stat"><strong>Most Chosen Channel:</strong> ${summary.mostChannel[0]} (${summary.mostChannel[1]} times)</div>
+                <div class="stat"><strong>Most Common Expectation:</strong> "${summary.mostExpectation[0]}" (${summary.mostExpectation[1]} times)</div>
+                <div class="stat"><strong>Most Excited Item/Product:</strong> "${summary.mostExcited[0]}" (${summary.mostExcited[1]} times)</div>
+                <div class="stat"><strong>Q5 - Satisfied:</strong> Yes: ${summary.q5.yes}, No: ${summary.q5.no}</div>
+                <div class="stat"><strong>Satisfaction Explanations:</strong></div>
+                <ul>${summary.q5Explanations.map(exp => `<li>${exp.satisfied.toUpperCase()}: ${exp.explanation}</li>`).join('')}</ul>
+            `;
+            document.getElementById('summaryContent').innerHTML = html;
+        }
+
+        // Draw graphs
+        let q1Chart, channelsChart, q5Chart;
+        function drawGraphs() {
+            const responses = loadResponses();
+            if (responses.length === 0) return;
+
+            const summary = computeSummary(responses);
+
+            // Q1 Pie Chart
+            const q1Ctx = document.getElementById('q1Chart').getContext('2d');
+            if (q1Chart) q1Chart.destroy();
+            q1Chart = new Chart(q1Ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Yes', 'No'],
+                    datasets: [{ data: [summary.q1.yes, summary.q1.no], backgroundColor: ['#28a745', '#dc3545'] }]
+                },
+                options: { plugins: { title: { display: true, text: 'Q1: Seen Promotion' } } }
+            });
+
+            // Channels Bar Chart
+            const channelsCtx = document.getElementById('channelsChart').getContext('2d');
+            if (channelsChart) channelsChart.destroy();
+            channelsChart = new Chart(channelsCtx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(summary.channels),
+                    datasets: [{ label: 'Channel Counts', data: Object.values(summary.channels), backgroundColor: '#007bff' }]
+                },
+                options: { 
+                    plugins: { title: { display: true, text: 'Q2: Channels (for Yes responses)' } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            // Q5 Pie Chart
+            const q5Ctx = document.getElementById('q5Chart').getContext('2d');
+            if (q5Chart) q5Chart.destroy();
+            q5Chart = new Chart(q5Ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Yes', 'No'],
+                    datasets: [{ data: [summary.q5.yes, summary.q5.no], backgroundColor: ['#28a745', '#dc3545'] }]
+                },
+                options: { plugins: { title: { display: true, text: 'Q5: Satisfied with Purchase' } } }
+            });
+        }
+
+        // Export to CSV
+        function exportToCSV() {
+            const responses = loadResponses();
+            if (responses.length === 0) {
+                alert('No data to export.');
+                return;
+            }
+
+            let csv = 'Q1,Q2 Channels,Q3 Expectation,Q4 Excited Item,Q5 Satisfied,Q5 Explanation\n';
+            responses.forEach(r => {
+                const channels = r.channels ? r.channels.join(';') : '';
+                csv += `"${r.q1}","${channels}","${r.q3 || ''}","${r.q4 || ''}","${r.q5}","${r.q5Explanation || ''}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'questionnaire_summary.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Form submission
+        document.getElementById('questionnaireForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const response = {
+                q1: document.querySelector('input[name="q1"]:checked')?.value || '',
+                channels: Array.from(document.querySelectorAll('input[name="channels"]:checked')).map(cb => cb.value),
+                q3: formData.get('q3') || '',
+                q4: formData.get('q4') || '',
+                q5: document.querySelector('input[name="q5"]:checked')?.value || '',
+                q5Explanation: formData.get('q5Explanation') || ''
+            };
+
+            if (!response.q1) {
+                alert('Please answer Q1.');
+                return;
+            }
+            if (response.q1 === 'no') {
+                response.channels = []; // Clear if no
+            }
+
+            const responses = loadResponses();
+            responses.push(response);
+            saveResponses(responses);
+
+            this.reset();
+            document.getElementById('q2Label').style.display = 'none';
+            document.getElementById('q2Channels').style.display = 'none';
+            alert('Response saved!');
+        });
+
+        // Toggle Q2 visibility
+        document.querySelectorAll('input[name="q1"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const show = this.value === 'yes';
+                document.getElementById('q2Label').style.display = show ? 'block' : 'none';
+                document.getElementById('q2Channels').style.display = show ? 'block' : 'none';
+            });
+        });
+
+        // Clear form
+        document.getElementById('clearForm').addEventListener('click', function() {
+            document.getElementById('questionnaireForm').reset();
+            document.getElementById('q2Label').style.display = 'none';
+            document.getElementById('q2Channels').style.display = 'none';
+        });
+
+        // Load summary button
+        document.getElementById('loadSummary').addEventListener('click', function() {
+            displaySummary();
+            drawGraphs();
+        });
+
+        // Clear all data
+        document.getElementById('clearAll').addEventListener('click', function() {
+            if (confirm('Clear all data?')) {
+                localStorage.removeItem(STORAGE_KEY);
+                document.getElementById('summaryContent').innerHTML = '<p>No responses yet. Submit some to see summary.</p>';
+                if (q1Chart) q1Chart.destroy();
+                if (channelsChart) channelsChart.destroy();
+                if (q5Chart) q5Chart.destroy();
+                // Clear canvases
+                document.getElementById('q1Chart').getContext('2d').clearRect(0, 0, 400, 400);
+                document.getElementById('channelsChart').getContext('2d').clearRect(0, 0, 400, 400);
+                document.getElementById('q5Chart').getContext('2d').clearRect(0, 0, 400, 400);
+            }
+        });
+
+        // Export button
+        document.getElementById('exportBtn').addEventListener('click', exportToCSV);
+
+        // Initial load
+        displaySummary();
+        drawGraphs();
+    </script>
+</body>
+</html>
