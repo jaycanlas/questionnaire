@@ -255,16 +255,19 @@
 
             const summary = computeSummary(responses);
 
-            // Q1 Pie Chart
+            // Q1 Bar Chart
             const q1Ctx = document.getElementById('q1Chart').getContext('2d');
             if (q1Chart) q1Chart.destroy();
             q1Chart = new Chart(q1Ctx, {
-                type: 'pie',
+                type: 'bar',
                 data: {
                     labels: ['Yes', 'No'],
-                    datasets: [{ data: [summary.q1.yes, summary.q1.no], backgroundColor: ['#28a745', '#dc3545'] }]
+                    datasets: [{ label: 'Responses', data: [summary.q1.yes, summary.q1.no], backgroundColor: ['#28a745', '#dc3545'] }]
                 },
-                options: { plugins: { title: { display: true, text: 'Q1: Seen Promotion' } } }
+                options: { 
+                    plugins: { title: { display: true, text: 'Q1: Seen Promotion' } },
+                    scales: { y: { beginAtZero: true } }
+                }
             });
 
             // Channels Bar Chart
@@ -282,41 +285,66 @@
                 }
             });
 
-            // Q5 Pie Chart
+            // Q5 Bar Chart
             const q5Ctx = document.getElementById('q5Chart').getContext('2d');
             if (q5Chart) q5Chart.destroy();
             q5Chart = new Chart(q5Ctx, {
-                type: 'pie',
+                type: 'bar',
                 data: {
                     labels: ['Yes', 'No'],
-                    datasets: [{ data: [summary.q5.yes, summary.q5.no], backgroundColor: ['#28a745', '#dc3545'] }]
+                    datasets: [{ label: 'Responses', data: [summary.q5.yes, summary.q5.no], backgroundColor: ['#28a745', '#dc3545'] }]
                 },
-                options: { plugins: { title: { display: true, text: 'Q5: Satisfied with Purchase' } } }
+                options: { 
+                    plugins: { title: { display: true, text: 'Q5: Satisfied with Purchase' } },
+                    scales: { y: { beginAtZero: true } }
+                }
             });
         }
 
-        // Export to CSV
-        function exportToCSV() {
-            const responses = loadResponses();
-            if (responses.length === 0) {
-                alert('No data to export.');
-                return;
-            }
-
-            let csv = 'Q1,Q2 Channels,Q3 Expectation,Q4 Excited Item,Q5 Satisfied,Q5 Explanation\n';
-            responses.forEach(r => {
-                const channels = r.channels ? r.channels.join(';') : '';
-                csv += `"${r.q1}","${channels}","${r.q3 || ''}","${r.q4 || ''}","${r.q5}","${r.q5Explanation || ''}"\n`;
-            });
-
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'questionnaire_summary.csv';
-            a.click();
-            URL.revokeObjectURL(url);
+        // Export to CSV (with summary included)
+    function exportToCSV() {
+        const responses = loadResponses();
+        if (responses.length === 0) {
+            alert('No data to export.');
+            return;
         }
+
+        // Section 1: Raw Responses
+        let csv = '--- Raw Responses ---\n';
+        csv += 'Q1,Q2 Channels,Q3 Expectation,Q4 Excited Item,Q5 Satisfied,Q5 Explanation\n';
+        responses.forEach(r => {
+            const channels = r.channels ? r.channels.join(';') : '';
+            csv += `"${r.q1}","${channels}","${r.q3 || ''}","${r.q4 || ''}","${r.q5}","${r.q5Explanation || ''}"\n`;
+        });
+
+        // Section 2: Summary
+        const summary = computeSummary(responses);
+        csv += '\n--- Summary Details ---\n';
+        csv += `Total Responses,${summary.total}\n`;
+        csv += `Q1 Seen Promotion - Yes,${summary.q1.yes}\n`;
+        csv += `Q1 Seen Promotion - No,${summary.q1.no}\n`;
+        csv += `Total Channel Selections,${summary.totalChannelSelections}\n`;
+        csv += `Most Chosen Channel,${summary.mostChannel[0]} (${summary.mostChannel[1]} times)\n`;
+        csv += `Most Common Expectation,"${summary.mostExpectation[0]}" (${summary.mostExpectation[1]} times)\n`;
+        csv += `Most Excited Item/Product,"${summary.mostExcited[0]}" (${summary.mostExcited[1]} times)\n`;
+        csv += `Q5 Satisfied - Yes,${summary.q5.yes}\n`;
+        csv += `Q5 Satisfied - No,${summary.q5.no}\n`;
+
+        // Explanations
+        csv += '--- Satisfaction Explanations ---\n';
+        summary.q5Explanations.forEach((exp, idx) => {
+            csv += `Explanation ${idx + 1},${exp.satisfied.toUpperCase()},"${exp.explanation}"\n`;
+        });
+
+        // Download
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'questionnaire_summary.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
 
         // Form submission
         document.getElementById('questionnaireForm').addEventListener('submit', function(e) {
